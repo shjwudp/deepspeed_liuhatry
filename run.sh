@@ -27,12 +27,12 @@ ZERO_STAGE=0
 
 # Debug
 TP=1
-PP=4
-LAYERS=8
-HIDDEN=512
-EXPERT_HIDDEN=1024
+PP=8
+LAYERS=24
+HIDDEN=1024
+EXPERT_HIDDEN=2048
 NUM_EXPERTS=80
-SEQ=1024
+SEQ=256
 GLOBAL_BATCH=128
 WORKER_STR=""
 #WORKER_STR="-i worker-0"
@@ -79,7 +79,7 @@ options=" \
         --expert-hidden-size $EXPERT_HIDDEN \
 	--num-experts $NUM_EXPERTS \
 	--top-k 2 \
-        --num-attention-heads 32 \
+        --num-attention-heads 16 \
         --seq-length $SEQ \
         --loss-scale 12 \
         --max-position-embeddings $SEQ \
