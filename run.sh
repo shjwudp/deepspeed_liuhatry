@@ -11,8 +11,8 @@ mkdir -p $DIR/logs
 #DATASET_3="<PATH TO THE THIRD DATASET>"
 #DATASET="0.2 ${DATASET_1} 0.3 ${DATASET_2} 0.5 ${DATASET_3}"
 
-BASE_DATA_PATH=/data/Megatron-LM/data
-DATASET=${BASE_DATA_PATH}/indexed_datasets/megatron
+BASE_DATA_PATH=/share/ai_platform/changjianbin/playground/Megatron-DeepSpeed/
+DATASET=${BASE_DATA_PATH}/indexed_datasets/megatron/my-gpt2_text_document
 VOCAB_PATH=${BASE_DATA_PATH}/gpt2-vocab.json
 MERGE_PATH=${BASE_DATA_PATH}/gpt2-merges.txt
 
@@ -26,23 +26,26 @@ ZERO_STAGE=0
 
 
 # Debug
-#TP=4
-#PP=4
-#LAYERS=8
-#HIDDEN=512
-#SEQ=1024
-#GLOBAL_BATCH=128
+TP=1
+PP=4
+LAYERS=8
+HIDDEN=512
+EXPERT_HIDDEN=1024
+NUM_EXPERTS=80
+SEQ=1024
+GLOBAL_BATCH=128
+WORKER_STR=""
 #WORKER_STR="-i worker-0"
 
 
 # 52B
-TP=4
-PP=16
-HIDDEN=8192
-LAYERS=64
-SEQ=1024
-GLOBAL_BATCH=1024
-WORKER_STR=""
+#TP=4
+#PP=16
+#HIDDEN=8192
+#LAYERS=64
+#SEQ=1024
+#GLOBAL_BATCH=1024
+#WORKER_STR=""
 
 MICRO_BATCH=4
 
@@ -73,6 +76,9 @@ options=" \
 	--pipeline-model-parallel-size $PP \
         --num-layers $LAYERS \
         --hidden-size $HIDDEN \
+        --expert-hidden-size $EXPERT_HIDDEN \
+	--num-experts $NUM_EXPERTS \
+	--top-k 2 \
         --num-attention-heads 32 \
         --seq-length $SEQ \
         --loss-scale 12 \

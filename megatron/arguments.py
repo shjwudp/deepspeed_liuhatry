@@ -45,6 +45,7 @@ def parse_args(extra_args_provider=None, defaults={},
     parser = _add_zero_args(parser)
     parser = _add_memoryopt_args(parser)
     parser = _add_activation_checkpoint_args(parser)
+    parser = _add_moe_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -827,4 +828,14 @@ def _add_activation_checkpoint_args(parser):
                        help='does a synchronize at the beginning and end of each checkpointed layer.')
     group.add_argument('--profile-backward', action='store_true',
                        help='Enables backward pass profiling for checkpointed layers.')
+    return parser
+
+def _add_moe_args(parser):
+    group = parser.add_argument_group(title='moe')
+
+    group.add_argument('--enable-moe', action='store_true')
+    group.add_argument("--num-experts", type=int, default=None)
+    group.add_argument("--top-k", type=int, default=2)
+    group.add_argument('--expert-hidden-size', type=int, default=None, help='Expert hidden size.')
+
     return parser

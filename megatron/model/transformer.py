@@ -26,6 +26,7 @@ from megatron.model import LayerNorm
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
+from tutel import moe as tutel_moe
 
 import deepspeed
 
@@ -440,8 +441,18 @@ class ParallelTransformerLayer(MegatronModule):
                 eps=args.layernorm_epsilon)
 
         # MLP
-        self.mlp = ParallelMLP(init_method,
-                               output_layer_init_method)
+        #self.mlp = ParallelMLP(init_method,
+        #                       output_layer_init_method)
+        self.hidden_size = args.hidden_size
+        self.mlp = tutel_moe.moe_layer(
+            gate_type = {'type': 'top', 'k': args.top_k},
+            model_dim=args.hidden_size,
+            experts = {'type': 'ffn', 'count_per_node': args.num_experts, 'hidden_size_per_expert': args.expert_hidden_size, 'activation_fn': lambda x: F.gelu(x)},
+            scan_expert_func = lambda name, param: setattr(param, 'expert', True),
+            group = torch.distributed.new_group([torch.distributed.get_rank()]),
+            seeds = (1, torch.distributed.get_rank() + 1, 1),
+        )
+
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
@@ -512,7 +523,8 @@ class ParallelTransformerLayer(MegatronModule):
             layernorm_output = self.post_inter_attention_layernorm(layernorm_input)
 
         # MLP.
-        mlp_output, mlp_bias = self.mlp(layernorm_output)
+        mlp_output = self.mlp(layernorm_output)
+        mlp_bias = torch.zeros(self.hidden_size, dtype=layernorm_output.dtype, device=layernorm_output.device)
 
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -545,7 +557,7 @@ class ParallelTransformerLayerPipe(ParallelTransformerLayer):
        to the next stage in the pipeline.
 
        This version is useful if masks are dynamic.
-    
+
     2) forward(input, **kwargs) -> output
        When the mask is static over all samples, it is advantageous to
        cache the mask and avoid communicating it.
