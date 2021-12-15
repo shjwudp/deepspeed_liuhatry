@@ -21,7 +21,11 @@
 #include "ATen/ATen.h"
 #include "ATen/AccumulateType.h"
 #include "ATen/cuda/CUDAContext.h"
+#if __has_include(<THC/THCDeviceUtils.cuh>)
 #include <THC/THCDeviceUtils.cuh>
+#else
+#include <ATen/cuda/DeviceUtils.cuh>
+#endif
 
 #include <cuda.h>
 #include <cuda_runtime.h>
