@@ -17,6 +17,7 @@
 import math
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from megatron import get_args
 from megatron import mpu
@@ -441,17 +442,33 @@ class ParallelTransformerLayer(MegatronModule):
                 eps=args.layernorm_epsilon)
 
         # MLP
-        #self.mlp = ParallelMLP(init_method,
-        #                       output_layer_init_method)
         self.hidden_size = args.hidden_size
-        self.mlp = tutel_moe.moe_layer(
-            gate_type = {'type': 'top', 'k': args.top_k},
-            model_dim=args.hidden_size,
-            experts = {'type': 'ffn', 'count_per_node': args.num_experts, 'hidden_size_per_expert': args.expert_hidden_size, 'activation_fn': lambda x: F.gelu(x)},
-            scan_expert_func = lambda name, param: setattr(param, 'expert', True),
-            group = torch.distributed.new_group([torch.distributed.get_rank()]),
-            seeds = (1, torch.distributed.get_rank() + 1, 1),
-        )
+        self.moe = args.moe
+        if args.moe == "deepspeed":
+            self.moe_in = nn.Linear(args.hidden_size, args.expert_hidden_size)
+            self.moe_in = deepspeed.moe.layer.MoE(
+                hidden_size=args.expert_hidden_size,
+                expert=self.moe_in,
+                num_experts=args.num_experts,
+                k=args.top_k,
+            )
+            self.moe_out = nn.Linear(args.expert_hidden_size, args.hidden_size)
+        elif args.moe == "tutel":
+            self.mlp = tutel_moe.moe_layer(
+                gate_type={'type': 'top', 'k': args.top_k},
+                model_dim=args.hidden_size,
+                experts={
+                    'type': 'ffn',
+                    'count_per_node': args.num_experts,
+                    'hidden_size_per_expert': args.expert_hidden_size,
+                    'activation_fn': lambda x: F.gelu(x)
+                },
+                scan_expert_func=lambda name, param: setattr(param, 'expert', True),
+                group=mpu.get_data_parallel_group(),
+                seeds=(1, torch.distributed.get_rank() + 1, 1),
+            )
+        else:
+            self.mlp = ParallelMLP(init_method, output_layer_init_method)
 
 
     def forward(self, hidden_states, attention_mask,
@@ -523,8 +540,15 @@ class ParallelTransformerLayer(MegatronModule):
             layernorm_output = self.post_inter_attention_layernorm(layernorm_input)
 
         # MLP.
-        mlp_output = self.mlp(layernorm_output)
-        mlp_bias = torch.zeros(self.hidden_size, dtype=layernorm_output.dtype, device=layernorm_output.device)
+        if self.moe == "deepspeed":
+            x, _, _ = self.moe_in(layernorm_output)
+            mlp_output = self.moe_out(x)
+            mlp_bias = torch.zeros(self.hidden_size, dtype=layernorm_output.dtype, device=layernorm_output.device)
+        elif self.moe == "tutel":
+            mlp_output = self.mlp(layernorm_output)
+            mlp_bias = torch.zeros(self.hidden_size, dtype=layernorm_output.dtype, device=layernorm_output.device)
+        else:
+            mlp_output, mlp_bias = self.mlp(layernorm_output)
 
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:
