@@ -5,6 +5,8 @@ DIR=`pwd`
 DATETIME=`date +'date_%y-%m-%d_time_%H-%M-%S'`
 mkdir -p $DIR/logs
 
+# export NCCL_DEBUG=INFO
+export NCCL_IB_DISABLE=1
 
 #DATASET_1="<PATH TO THE FIRST DATASET>"
 #DATASET_2="<PATH TO THE SECOND DATASET>"
@@ -22,21 +24,92 @@ script_dir=$(dirname $script_path)
 CONFIG_JSON="$script_dir/ds_config.json"
 
 USE_DEEPSPEED=1
-ZERO_STAGE=2
-
+ZERO_STAGE=0
 
 # Debug
 TP=1
-PP=8
-LAYERS=24
+PP=1
+LAYERS=1
 HIDDEN=1024
+NUM_ATTN_HEADS=16
 EXPERT_HIDDEN=2048
-NUM_EXPERTS=80
+NUM_EXPERTS=1
 SEQ=256
-GLOBAL_BATCH=128
+GLOBAL_BATCH=2048
 WORKER_STR=""
 #WORKER_STR="-i worker-0"
 
+# 8B
+TP=1
+PP=1
+LAYERS=1
+HIDDEN=6144
+NUM_ATTN_HEADS=32
+EXPERT_HIDDEN=4096
+NUM_EXPERTS=24
+SEQ=128
+GLOBAL_BATCH=32768
+WORKER_STR=""
+
+# # 16B
+# TP=1
+# PP=2
+# LAYERS=2
+# HIDDEN=6144
+# NUM_ATTN_HEADS=32
+# EXPERT_HIDDEN=4096
+# NUM_EXPERTS=24
+# SEQ=128
+# GLOBAL_BATCH=32768
+# WORKER_STR=""
+
+# # 32B
+# TP=1
+# PP=4
+# LAYERS=4
+# HIDDEN=6144
+# NUM_ATTN_HEADS=32
+# EXPERT_HIDDEN=4096
+# NUM_EXPERTS=24
+# SEQ=128
+# GLOBAL_BATCH=32768
+# WORKER_STR=""
+
+# # 64B
+# TP=1
+# PP=8
+# LAYERS=8
+# HIDDEN=6144
+# NUM_ATTN_HEADS=32
+# EXPERT_HIDDEN=4096
+# NUM_EXPERTS=24
+# SEQ=128
+# GLOBAL_BATCH=32768
+# WORKER_STR=""
+
+# # 64B all-to-all
+# TP=1
+# PP=1
+# LAYERS=8
+# HIDDEN=6144
+# NUM_ATTN_HEADS=32
+# EXPERT_HIDDEN=4096
+# NUM_EXPERTS=24
+# SEQ=128
+# GLOBAL_BATCH=32768
+# WORKER_STR=""
+
+# test
+TP=1
+PP=1
+LAYERS=4
+HIDDEN=3072
+NUM_ATTN_HEADS=48
+EXPERT_HIDDEN=6144
+NUM_EXPERTS=40
+SEQ=128
+GLOBAL_BATCH=4096
+WORKER_STR=""
 
 # 52B
 #TP=4
@@ -47,7 +120,7 @@ WORKER_STR=""
 #GLOBAL_BATCH=1024
 #WORKER_STR=""
 
-MICRO_BATCH=4
+MICRO_BATCH=32
 
 while [[ $# -gt 0 ]]
 do
@@ -72,24 +145,25 @@ done
 
 
 options=" \
+        --moe deepspeed \
 	--tensor-model-parallel-size $TP \
 	--pipeline-model-parallel-size $PP \
         --num-layers $LAYERS \
         --hidden-size $HIDDEN \
         --expert-hidden-size $EXPERT_HIDDEN \
 	--num-experts $NUM_EXPERTS \
-	--top-k 2 \
-        --num-attention-heads 16 \
+	--top-k 1 \
+        --num-attention-heads $NUM_ATTN_HEADS \
         --seq-length $SEQ \
         --loss-scale 12 \
-        --max-position-embeddings $SEQ \
+        --max-position-embeddings 512 \
 	--micro-batch-size $MICRO_BATCH \
 	--global-batch-size $GLOBAL_BATCH \
 	--train-iters 1000 \
         --lr 6.0e-5 \
 	--min-lr 6.0e-6 \
         --lr-decay-style cosine \
-        --log-interval 1 \
+        --log-interval 10 \
         --eval-iters 40 \
         --eval-interval 1000 \
 	--data-path ${DATASET} \
@@ -122,14 +196,15 @@ cat <<EOT > $CONFIG_JSON
 {
   "train_batch_size" : $GLOBAL_BATCH,
   "train_micro_batch_size_per_gpu": $MICRO_BATCH,
-  "steps_per_print": 1,
+  "steps_per_print": 10,
 
   "zero_optimization": {
-    "stage": $ZERO_STAGE
+    "stage": $ZERO_STAGE,
+    "contiguous_gradients": true
   },
 
   "gradient_clipping": 1.0,
-  "prescale_gradients": true,
+  "prescale_gradients": false,
 
   "fp16": {
     "enabled": true,
@@ -144,9 +219,36 @@ cat <<EOT > $CONFIG_JSON
 }
 EOT
 
+
+#   "zero_optimization": {
+#     "stage": [0|1|2],
+#     "stage3_max_live_parameters" : 1000000000,
+#     "stage3_max_reuse_distance" : 1000000000,
+#     "allgather_partitions": [true|false],
+#     "allgather_bucket_size": 500000000,
+#     "reduce_scatter": [true|false],
+#     "contiguous_gradients" : [true|false]
+#     "overlap_comm": [true|false],
+#     "reduce_bucket_size": 500000000,
+#     "load_from_fp32_weights": [true|false],
+#     "cpu_offload": [true|false] (deprecated),
+#     "cpu_offload_params" : [true|false] (deprecated),
+#     "cpu_offload_use_pin_memory": [true|false] (deprecated),
+#     "sub_group_size" : 1000000000000,
+#     "offload_param": {...},
+#     "offload_optimizer": {...},
+#     "ignore_unused_parameters": [true|false],
+#     "round_robin_gradients": [true|false]
+#   }
+
+#   "zero_optimization": {
+#     "stage": 1,
+#   },
+
 #run_cmd="deepspeed -i worker-0:0,1,2,3 ${DIR}/pretrain_gpt.py $@ ${options}"
 #run_cmd="deepspeed -i worker-0 ${DIR}/pretrain_gpt.py $@ ${options}"
-run_cmd="deepspeed $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${options}"
+run_cmd="deepspeed --hostfile ./hostfile_1 $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${options}"
+# run_cmd="deepspeed $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${options}"
 
 
 echo ${run_cmd}

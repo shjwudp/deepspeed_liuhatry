@@ -837,6 +837,7 @@ def _add_moe_args(parser):
     group.add_argument("--moe", choices=['none', 'tutel', 'deepspeed'], default="none")
     group.add_argument("--num-experts", type=int, default=None)
     group.add_argument("--top-k", type=int, default=2)
+    group.add_argument("--ep-world-size", type=int, default=8)
     group.add_argument('--expert-hidden-size', type=int, default=None, help='Expert hidden size.')
 
     return parser

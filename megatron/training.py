@@ -111,6 +111,9 @@ def pretrain(train_valid_test_dataset_provider,
     args = get_args()
     timers = get_timers()
 
+    if args.moe == "deepspeed":
+        deepspeed.utils.groups.initialize(ep_size=args.ep_world_size)
+
     if args.deepspeed:
         args.deepspeed_configuration = json.load(
             open(args.deepspeed_config, 'r', encoding='utf-8'))
@@ -837,7 +840,7 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
                     forward_backward_func = forward_backward_pipelining_without_interleaving
             else:
                 forward_backward_func = forward_backward_no_pipelining
-            
+
             if args.deepspeed:
                 # DeepSpeed uses eval_batch() and already aggregates losses.
                 assert isinstance(model, list) and len(model) == 1
@@ -847,7 +850,7 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
                 loss_dicts = forward_backward_func(
                     forward_step_func, data_iterator, model, optimizer=None,
                     timers=None, forward_only=True)
-            
+
             if mpu.is_pipeline_last_stage(ignore_virtual=True):
                 # Reduce across processes.
                 for loss_dict in loss_dicts:

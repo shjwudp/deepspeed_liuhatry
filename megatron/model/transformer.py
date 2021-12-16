@@ -388,6 +388,21 @@ def bias_dropout_add_fused_inference(x, bias, residual, prob):
     return bias_dropout_add(x, bias, residual, prob, False)
 
 
+class MegatronMoeBaseMLP(torch.nn.Module):
+    def __init__(self, hidden_size, ffn_hidden_size, activation=torch.nn.GELU()):
+        super(MegatronMoeBaseMLP, self).__init__()
+
+        self.dense_h_to_4h = torch.nn.Linear(hidden_size, ffn_hidden_size)
+        self.activation = activation
+        self.dense_4h_to_h = torch.nn.Linear(ffn_hidden_size, hidden_size)
+
+    def forward(self, input):
+        x = self.dense_h_to_4h(input)
+        x = self.activation(x)
+        x = self.dense_4h_to_h(x)
+        return x
+
+
 class ParallelTransformerLayer(MegatronModule):
     """A single transformer layer.
 
@@ -445,14 +460,13 @@ class ParallelTransformerLayer(MegatronModule):
         self.hidden_size = args.hidden_size
         self.moe = args.moe
         if args.moe == "deepspeed":
-            self.moe_in = nn.Linear(args.hidden_size, args.expert_hidden_size)
-            self.moe_in = deepspeed.moe.layer.MoE(
-                hidden_size=args.expert_hidden_size,
-                expert=self.moe_in,
+            self.mlp = deepspeed.moe.layer.MoE(
+                hidden_size=args.hidden_size,
+                expert=MegatronMoeBaseMLP(args.hidden_size, args.expert_hidden_size),
                 num_experts=args.num_experts,
                 k=args.top_k,
+                #use_tutel=True,
             )
-            self.moe_out = nn.Linear(args.expert_hidden_size, args.hidden_size)
         elif args.moe == "tutel":
             self.mlp = tutel_moe.moe_layer(
                 gate_type={'type': 'top', 'k': args.top_k},
@@ -541,8 +555,7 @@ class ParallelTransformerLayer(MegatronModule):
 
         # MLP.
         if self.moe == "deepspeed":
-            x, _, _ = self.moe_in(layernorm_output)
-            mlp_output = self.moe_out(x)
+            mlp_output, _, _ = self.mlp(layernorm_output)
             mlp_bias = torch.zeros(self.hidden_size, dtype=layernorm_output.dtype, device=layernorm_output.device)
         elif self.moe == "tutel":
             mlp_output = self.mlp(layernorm_output)

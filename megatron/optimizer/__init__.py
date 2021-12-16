@@ -55,7 +55,7 @@ def _get_params_for_weight_decay_optimization(modules):
                 if p is not None and is_moe_param(p)
             ])
 
-    return weight_decay_params, no_weight_decay_params
+    return weight_decay_params, no_weight_decay_params, moe_params_with_weight_decay
 
 
 def get_megatron_optimizer(model):
