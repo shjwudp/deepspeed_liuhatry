@@ -465,7 +465,7 @@ class ParallelTransformerLayer(MegatronModule):
                 expert=MegatronMoeBaseMLP(args.hidden_size, args.expert_hidden_size),
                 num_experts=args.num_experts,
                 k=args.top_k,
-                #use_tutel=True,
+                use_tutel=args.use_tutel,
             )
         elif args.moe == "tutel":
             self.mlp = tutel_moe.moe_layer(

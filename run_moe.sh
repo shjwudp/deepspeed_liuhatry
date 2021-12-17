@@ -8,16 +8,10 @@ mkdir -p $DIR/logs
 # export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=1
 
-#DATASET_1="<PATH TO THE FIRST DATASET>"
-#DATASET_2="<PATH TO THE SECOND DATASET>"
-#DATASET_3="<PATH TO THE THIRD DATASET>"
-#DATASET="0.2 ${DATASET_1} 0.3 ${DATASET_2} 0.5 ${DATASET_3}"
-
 BASE_DATA_PATH=/share/ai_platform/changjianbin/playground/Megatron-DeepSpeed/
-DATASET=${BASE_DATA_PATH}/indexed_datasets/megatron/my-gpt2_text_document
+DATASET=${BASE_DATA_PATH}/my-gpt2_text_document
 VOCAB_PATH=${BASE_DATA_PATH}/gpt2-vocab.json
 MERGE_PATH=${BASE_DATA_PATH}/gpt2-merges.txt
-
 
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
@@ -25,102 +19,31 @@ CONFIG_JSON="$script_dir/ds_config.json"
 
 USE_DEEPSPEED=1
 ZERO_STAGE=0
+HOSTFILE=""
 
-# Debug
-TP=1
-PP=1
-LAYERS=1
-HIDDEN=1024
-NUM_ATTN_HEADS=16
-EXPERT_HIDDEN=2048
-NUM_EXPERTS=1
-SEQ=256
-GLOBAL_BATCH=2048
-WORKER_STR=""
-#WORKER_STR="-i worker-0"
-
-# 8B
-TP=1
-PP=1
-LAYERS=1
-HIDDEN=6144
-NUM_ATTN_HEADS=32
-EXPERT_HIDDEN=4096
-NUM_EXPERTS=24
-SEQ=128
-GLOBAL_BATCH=32768
-WORKER_STR=""
-
-# # 16B
-# TP=1
-# PP=2
-# LAYERS=2
-# HIDDEN=6144
-# NUM_ATTN_HEADS=32
-# EXPERT_HIDDEN=4096
-# NUM_EXPERTS=24
-# SEQ=128
-# GLOBAL_BATCH=32768
-# WORKER_STR=""
-
-# # 32B
-# TP=1
-# PP=4
-# LAYERS=4
-# HIDDEN=6144
-# NUM_ATTN_HEADS=32
-# EXPERT_HIDDEN=4096
-# NUM_EXPERTS=24
-# SEQ=128
-# GLOBAL_BATCH=32768
-# WORKER_STR=""
-
-# # 64B
-# TP=1
-# PP=8
-# LAYERS=8
-# HIDDEN=6144
-# NUM_ATTN_HEADS=32
-# EXPERT_HIDDEN=4096
-# NUM_EXPERTS=24
-# SEQ=128
-# GLOBAL_BATCH=32768
-# WORKER_STR=""
-
-# # 64B all-to-all
-# TP=1
-# PP=1
-# LAYERS=8
-# HIDDEN=6144
-# NUM_ATTN_HEADS=32
-# EXPERT_HIDDEN=4096
-# NUM_EXPERTS=24
-# SEQ=128
-# GLOBAL_BATCH=32768
-# WORKER_STR=""
 
 # test
+PROJECT="4layers_deepspeed_1node"
 TP=1
 PP=1
 LAYERS=4
+MICRO_BATCH=32
+GLOBAL_BATCH=4096
+MOE="deepspeed"
+NUM_EXPERTS=40
+TOP_K=2
+
 HIDDEN=3072
 NUM_ATTN_HEADS=48
 EXPERT_HIDDEN=6144
-NUM_EXPERTS=40
 SEQ=128
-GLOBAL_BATCH=4096
 WORKER_STR=""
 
-# 52B
-#TP=4
-#PP=16
-#HIDDEN=8192
-#LAYERS=64
-#SEQ=1024
-#GLOBAL_BATCH=1024
-#WORKER_STR=""
-
-MICRO_BATCH=32
+TIME=$(date +%Y-%m-%d-%H-%M-%S)
+MODEL_NAME=layers${LAYERS}_pipline${PP}_micro${MICRO_BATCH}_global${GLOBAL_BATCH}_moe${MOE}_topk${TOP_K}_experts${NUM_EXPERTS}_zero${ZERO_STAGE}_${TIME}
+TENSORBOARD_DIR=./tensorboard/${PROJECT}/${MODEL_NAME}
+LOGS_DIR="logs/"${PROJECT}
+mkdir -p $LOGS_DIR
 
 while [[ $# -gt 0 ]]
 do
@@ -145,39 +68,45 @@ done
 
 
 options=" \
-        --moe deepspeed \
-	--tensor-model-parallel-size $TP \
-	--pipeline-model-parallel-size $PP \
+        --moe ${MOE} \
+        --tensor-model-parallel-size $TP \
+        --pipeline-model-parallel-size $PP \
         --num-layers $LAYERS \
         --hidden-size $HIDDEN \
         --expert-hidden-size $EXPERT_HIDDEN \
-	--num-experts $NUM_EXPERTS \
-	--top-k 1 \
+        --num-experts $NUM_EXPERTS \
+        --top-k ${TOP_K} \
         --num-attention-heads $NUM_ATTN_HEADS \
         --seq-length $SEQ \
         --loss-scale 12 \
         --max-position-embeddings 512 \
-	--micro-batch-size $MICRO_BATCH \
-	--global-batch-size $GLOBAL_BATCH \
-	--train-iters 1000 \
+        --micro-batch-size $MICRO_BATCH \
+        --global-batch-size $GLOBAL_BATCH \
+        --train-iters 1000000 \
         --lr 6.0e-5 \
-	--min-lr 6.0e-6 \
+        --min-lr 6.0e-6 \
         --lr-decay-style cosine \
         --log-interval 10 \
         --eval-iters 40 \
         --eval-interval 1000 \
-	--data-path ${DATASET} \
-	--vocab-file ${VOCAB_PATH} \
-	--merge-file ${MERGE_PATH} \
-	--save-interval 1000 \
+        --data-path ${DATASET} \
+        --vocab-file ${VOCAB_PATH} \
+        --merge-file ${MERGE_PATH} \
+        --save-interval 1000000 \
         --split 98,2,0 \
         --clip-grad 1.0 \
-	--weight-decay 0.1 \
-	--adam-beta1 0.9 \
-	--adam-beta2 0.95 \
-	--init-method-std 0.006 \
+        --weight-decay 0.1 \
+        --adam-beta1 0.9 \
+        --adam-beta2 0.95 \
+        --init-method-std 0.006 \
         --fp16 \
-	--checkpoint-activations
+        --checkpoint-activations \
+        --log-num-zeros-in-grad \
+        --log-params-norm \
+        --log-timers-to-tensorboard \
+        --log-batch-size-to-tensorboard \
+        --log-validation-ppl-to-tensorboard \
+        --tensorboard-dir ${TENSORBOARD_DIR}
         "
 
 
@@ -245,11 +174,7 @@ EOT
 #     "stage": 1,
 #   },
 
-#run_cmd="deepspeed -i worker-0:0,1,2,3 ${DIR}/pretrain_gpt.py $@ ${options}"
-#run_cmd="deepspeed -i worker-0 ${DIR}/pretrain_gpt.py $@ ${options}"
-run_cmd="deepspeed --hostfile ./hostfile_1 $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${options}"
-# run_cmd="deepspeed $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${options}"
-
+run_cmd="nohup deepspeed --hostfile ./${HOSTFILE} $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${options} > ${LOGS_DIR}/${MODEL_NAME}.log 2>&1 &"
 
 echo ${run_cmd}
 eval ${run_cmd}
