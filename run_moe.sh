@@ -31,7 +31,7 @@ MICRO_BATCH=32
 GLOBAL_BATCH=4096
 MOE="deepspeed"
 NUM_EXPERTS=40
-TOP_K=2
+TOP_K=1
 
 HIDDEN=3072
 NUM_ATTN_HEADS=48
@@ -69,6 +69,7 @@ done
 
 options=" \
         --moe ${MOE} \
+        --use-tutel \
         --tensor-model-parallel-size $TP \
         --pipeline-model-parallel-size $PP \
         --num-layers $LAYERS \
