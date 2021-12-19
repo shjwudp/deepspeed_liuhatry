@@ -403,6 +403,7 @@ def train_step(forward_step_func, data_iterator,
         skipped_iter = 0
         grad_norm = model[0].get_global_grad_norm()
         num_zeros_in_grad = 0
+        optimizer.moe_optimizer.step()
         return {'lm loss' : loss}, skipped_iter, grad_norm, num_zeros_in_grad
 
     # Set grad to zero.
@@ -412,7 +413,6 @@ def train_step(forward_step_func, data_iterator,
                 partition.zero_grad_buffer()
         else:
             optimizer.zero_grad()
-            optimizer.moe_optimizer.zero_grad()
 
     if mpu.get_pipeline_model_parallel_world_size() > 1:
         if args.virtual_pipeline_model_parallel_size is not None:
@@ -468,9 +468,6 @@ def train_step(forward_step_func, data_iterator,
                     args.data_parallel_size
         model[0].step(lr_kwargs={'increment': increment})
         update_successful = model[0].was_step_applied()
-        if update_successful:
-            update_successful, grad_norm, num_zeros_in_grad = optimizer.moe_optimizer.step()
-            print("!!! grad_norm={}, num_zeros_in_grad={}", grad_norm, num_zeros_in_grad)
     else:
         update_successful, grad_norm, num_zeros_in_grad = optimizer.step()
     timers('optimizer').stop()

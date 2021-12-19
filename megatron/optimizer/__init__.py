@@ -76,24 +76,26 @@ def get_megatron_optimizer(model):
                          weight_decay=args.weight_decay,
                          betas=(args.adam_beta1, args.adam_beta2),
                          eps=args.adam_eps)
-        optimizer.moe_optimizer = Adam(
+        setattr(optimizer, "moe_optimizer", Adam(
             moe_param_group,
             lr=args.lr,
             weight_decay=args.weight_decay,
             betas=(args.adam_beta1, args.adam_beta2),
             eps=args.adam_eps
-        )
+        ))
+        setattr(optimizer.moe_optimizer, "moe_param_group", moe_param_group)
     elif args.optimizer == 'sgd':
         optimizer = SGD(param_groups,
                         lr=args.lr,
                         weight_decay=args.weight_decay,
                         momentum=args.sgd_momentum)
-        optimizer.moe_optimizer = SGD(
+        setattr(optimizer, "moe_optimizer", SGD(
             moe_param_group,
             lr=args.lr,
             weight_decay=args.weight_decay,
             momentum=args.sgd_momentum
-        )
+        ))
+        setattr(optimizer.moe_optimizer, "moe_param_group", moe_param_group)
     else:
         raise Exception('{} optimizer is not supported.'.format(
             args.optimizer))
@@ -141,3 +143,4 @@ def get_megatron_optimizer(model):
     return FP32Optimizer(optimizer, args.clip_grad,
                          args.log_num_zeros_in_grad,
                          params_have_main_grad)
+
