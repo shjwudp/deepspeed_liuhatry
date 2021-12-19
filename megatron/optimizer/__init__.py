@@ -23,18 +23,20 @@ from .grad_scaler import ConstantGradScaler, DynamicGradScaler
 from .optimizer import Float16OptimizerWithFloat16Params, FP32Optimizer
 
 
+def is_moe_param(param):
+    return hasattr(param, 'expert')
+
+
 def _get_params_for_weight_decay_optimization(modules):
     """Divide params into with-weight-decay and without-weight-decay groups.
     Layernorms and baises will have no weight decay but the rest will.
     """
-    from deepspeed.moe.utils import is_moe_param
-
     weight_decay_params = {'params': []}
     no_weight_decay_params = {'params': [], 'weight_decay': 0.0}
-    moe_params_with_weight_decay = {
+    moe_params = {
         "params": [],
         "moe": True,
-        "name": "weight_decay_moe_params",
+        "name": "moe_params",
     }
     for module in modules:
         for module_ in module.modules():
@@ -50,12 +52,12 @@ def _get_params_for_weight_decay_optimization(modules):
                     [p for n, p in list(module_._parameters.items())
                      if p is not None and n == 'bias' and not is_moe_param(p)])
 
-            moe_params_with_weight_decay["params"].extend([
+            moe_params["params"].extend([
                 p for n, p in list(module_._parameters.items())
                 if p is not None and is_moe_param(p)
             ])
 
-    return weight_decay_params, no_weight_decay_params, moe_params_with_weight_decay
+    return weight_decay_params, no_weight_decay_params, moe_params
 
 
 def get_megatron_optimizer(model):
@@ -66,17 +68,32 @@ def get_megatron_optimizer(model):
 
     # Base optimizer.
     param_groups = _get_params_for_weight_decay_optimization(model)
+    moe_param_group = list(filter(lambda group: group.get("moe"), param_groups))
+    param_groups = list(filter(lambda group: "moe" not in group or not group["moe"], param_groups))
     if args.optimizer == 'adam':
         optimizer = Adam(param_groups,
                          lr=args.lr,
                          weight_decay=args.weight_decay,
                          betas=(args.adam_beta1, args.adam_beta2),
                          eps=args.adam_eps)
+        optimizer.moe_optimizer = Adam(
+            moe_param_group,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps
+        )
     elif args.optimizer == 'sgd':
         optimizer = SGD(param_groups,
                         lr=args.lr,
                         weight_decay=args.weight_decay,
                         momentum=args.sgd_momentum)
+        optimizer.moe_optimizer = SGD(
+            moe_param_group,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            momentum=args.sgd_momentum
+        )
     else:
         raise Exception('{} optimizer is not supported.'.format(
             args.optimizer))

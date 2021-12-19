@@ -346,12 +346,14 @@ def setup_model_and_optimizer(model_provider_func):
     if args.deepspeed:
         print_rank_0("DeepSpeed is enabled.")
         pp = mpu.get_pipeline_model_parallel_world_size()
+        moe_optimizer = optimizer.moe_optimizer
         model, optimizer, _, lr_scheduler = deepspeed.initialize(
             model=model[0],
             optimizer=optimizer,
             args=args,
             lr_scheduler=lr_scheduler
         )
+        optimizer.moe_optimizer = moe_optimizer
         if isinstance(model, deepspeed.PipelineEngine):
             # hack to get batch_fn from pretrain_gpt.py
             model.set_batch_fn(model.module._megatron_batch_fn)
@@ -410,6 +412,7 @@ def train_step(forward_step_func, data_iterator,
                 partition.zero_grad_buffer()
         else:
             optimizer.zero_grad()
+            optimizer.moe_optimizer.zero_grad()
 
     if mpu.get_pipeline_model_parallel_world_size() > 1:
         if args.virtual_pipeline_model_parallel_size is not None:
@@ -465,6 +468,9 @@ def train_step(forward_step_func, data_iterator,
                     args.data_parallel_size
         model[0].step(lr_kwargs={'increment': increment})
         update_successful = model[0].was_step_applied()
+        if update_successful:
+            update_successful, grad_norm, num_zeros_in_grad = optimizer.moe_optimizer.step()
+            print("!!! grad_norm={}, num_zeros_in_grad={}", grad_norm, num_zeros_in_grad)
     else:
         update_successful, grad_norm, num_zeros_in_grad = optimizer.step()
     timers('optimizer').stop()
@@ -629,6 +635,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                                   elapsed_time_per_iteration, args.consumed_train_samples)
                 writer.add_scalar('iteration-time/iteration-time vs tokens',
                                   elapsed_time_per_iteration, args.consumed_train_tokens)
+                writer.add_scalar("samples/sec", batch_size / (elapsed_time_per_iteration * 1000.))
         log_string = ' iteration {:8d}/{:8d} |'.format(
             iteration, args.train_iters)
         log_string += ' consumed samples: {:12d} |'.format(
