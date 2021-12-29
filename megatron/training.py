@@ -632,7 +632,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                                   elapsed_time_per_iteration, args.consumed_train_samples)
                 writer.add_scalar('iteration-time/iteration-time vs tokens',
                                   elapsed_time_per_iteration, args.consumed_train_tokens)
-                writer.add_scalar("samples/sec", batch_size / (elapsed_time_per_iteration * 1000.))
+                writer.add_scalar("samples/sec", args.micro_batch_size * args.data_parallel_size / elapsed_time_per_iteration)
         log_string = ' iteration {:8d}/{:8d} |'.format(
             iteration, args.train_iters)
         log_string += ' consumed samples: {:12d} |'.format(
@@ -641,6 +641,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             args.consumed_train_tokens)
         log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(
             elapsed_time_per_iteration * 1000.0)
+        log_string += ' samples per second: {:.2f} |'.format(
+            args.micro_batch_size * args.data_parallel_size / elapsed_time_per_iteration)
         log_string += ' learning rate: {:.3E} |'.format(learning_rate)
         log_string += ' global batch size: {:5d} |'.format(batch_size)
         for key in total_loss_dict:
